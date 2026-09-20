@@ -232,18 +232,29 @@ $('backupFile').onchange=async()=>{
  const tableAtStart=currentTable;
  if(!$('backupDialog').open)$('backupDialog').showModal();
  try{
-  await loadBackups();
   if(file.size>20000000)throw Error('JSON 文件过大');
   let data=JSON.parse((await file.text()).replace(/^\uFEFF/,''));
-  if(currentTable!==tableAtStart)return;
   if(Array.isArray(data))data={rows:data};
   if(!data||typeof data!=='object')throw Error('请选择包含 rows 数组的记录文件或二维数组');
-  if(data.table&&data.table!==currentTable)throw Error('文件属于'+(tables[data.table]||'另一张表')+'，请切换到该表导入');
   if(data.format&&data.format!=='information-ledger-v1')throw Error('不支持此 JSON 文件格式');
+  const fileTable=Object.hasOwn(tables,data.table)?data.table:null;
+  if(data.table&&!fileTable)throw Error('文件中的表名无法识别');
+  if(fileTable&&fileTable!==currentTable){
+   if(currentTable!==tableAtStart)return;
+   if(dirty||saving)throw Error('当前表有未保存的修改，请先保存后再导入');
+   // Backups carry their table name. Switch to that table before previewing,
+   // so importing a backup from another page does not look like a failure.
+   const route=fileTable==='general'?'all':fileTable;
+   history.replaceState(null,'','#'+route);
+   await navigate();
+   if(!$('backupDialog').open)$('backupDialog').showModal();
+  }
+  if(currentTable!==tableAtStart&&fileTable===tableAtStart)return;
+  await loadBackups();
   if(data.fields&&JSON.stringify(data.fields)!==JSON.stringify(fields))throw Error('文件列名与当前表不一致，请切换到对应表');
   const source={format:'information-ledger-v1',table:currentTable,fields,rows:data.rows};
   previewBackup(source,source,'JSON 导入预览：'+file.name);
-  $('backupStatus').textContent='请核对列顺序和内容。确认恢复将替换当前表，并自动备份原内容。';
+  $('backupStatus').textContent=`已切换到${tables[currentTable]}表。请核对列顺序和内容，确认恢复将替换当前表，并自动备份原内容。`;
  }catch(e){restoreSource=null;$('backupPreview').hidden=true;$('backupStatus').textContent='JSON 导入失败：'+e.message;toast('JSON 导入失败：'+e.message);}
 };
 $('restoreBackup').onclick=async()=>{
