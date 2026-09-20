@@ -15,7 +15,8 @@ function tableFields(key){return key==='computer'?['产品','名称','操作方�
 function validRows(value,key=currentTable){const expected=tableFields(key).length;return Array.isArray(value)&&value.length<=20000&&value.every(row=>Array.isArray(row)&&row.length===expected&&row.every(v=>typeof v==='string'&&v.length<=32767));}
 function readLocalRows(key=currentTable){try{const parsed=JSON.parse(localStorage.getItem(localKey(key))||'null');return validRows(parsed,key)?parsed:null;}catch{return null;}}
 function readLocalBackups(key=currentTable){try{const parsed=JSON.parse(localStorage.getItem(localBackupKey(key))||'[]');return Array.isArray(parsed)?parsed.filter(item=>validRows(item.rows,key)):[];}catch{return [];}}
-function writeLocalBackup(data=rows){const list=readLocalBackups();list.unshift({id:crypto.randomUUID?.()||String(Date.now()),time:new Date().toISOString(),rows:JSON.parse(JSON.stringify(data)),fields:[...fields]});localStorage.setItem(localBackupKey(currentTable),JSON.stringify(list.slice(0,30)));}
+function writeLocalBackupFor(key,data){const list=readLocalBackups(key);list.unshift({id:crypto.randomUUID?.()||String(Date.now()),time:new Date().toISOString(),rows:JSON.parse(JSON.stringify(data)),fields:[...tableFields(key)]});localStorage.setItem(localBackupKey(key),JSON.stringify(list.slice(0,30)));}
+function writeLocalBackup(data=rows){writeLocalBackupFor(currentTable,data);}
 function writeLocalRows(data=rows){localStorage.setItem(localKey(currentTable),JSON.stringify(data));localStorage.setItem(`${localKey(currentTable)}:revision`,String(revision));}
 function api(url,options={}){return fetch(url,{...options,headers:{...options.headers,'X-Ledger-Table':currentTable}});}
 const blank=()=>Array(fields.length).fill('');
@@ -156,12 +157,20 @@ function exportDocument(title,sections,format){
  throw Error('不支持的导出格式');
 }
 function staticSections(filtered=false){const selected=(filtered?visible().map(v=>v.row):rows).filter(r=>r.some(Boolean));return [{title:tables[currentTable],fields:[...fields],rows:selected}];}
+function tableRowsForExport(key){return (key===currentTable?rows:readLocalRows(key)||[]).filter(r=>r.some(Boolean));}
+function portableAllBackup(){
+ const tableData={};
+ Object.entries(tables).forEach(([key,title])=>{tableData[key]={title,fields:tableFields(key),rows:tableRowsForExport(key)};});
+ return {format:'information-ledger-all-v1',createdAt:new Date().toISOString(),tables:tableData};
+}
+function downloadJson(data,name){downloadBlob(new Blob([JSON.stringify(data,null,2)],{type:'application/json;charset=utf-8'}),`${name}-${new Date().toISOString().slice(0,10)}.json`);}
 async function exportRows(filtered){
  const format=$('exportFormat').value,exportLabel=tables[currentTable];
  $('exportAll').disabled=true;$('exportFiltered').disabled=true;toast('正在生成导出文件…');
  if(!loaded){toast('记录尚未读取完成');$('exportAll').disabled=false;$('exportFiltered').disabled=false;return;}
  const selected=(filtered?visible().map(v=>v.row):rows).filter(r=>r.some(Boolean));
- try{if(STATIC_MODE){const extension=exportDocument(`${tables[currentTable]}-${filtered?'筛选结果':'全部记录'}`,staticSections(filtered),format);toast(format==='pdf'?'已打开打印窗口，请选择“存储为 PDF”':`已导出 ${selected.length} 条记录（${extension.toUpperCase()}）`);return;}
+ try{if(format==='json'){downloadJson(portableBackup(selected),`${tables[currentTable]}-${filtered?'筛选结果':'全部记录'}`);toast(`已导出 ${selected.length} 条记录（JSON）`);return;}
+ if(STATIC_MODE){const extension=exportDocument(`${tables[currentTable]}-${filtered?'筛选结果':'全部记录'}`,staticSections(filtered),format);toast(format==='pdf'?'已打开打印窗口，请选择“存储为 PDF”':`已导出 ${selected.length} 条记录（${extension.toUpperCase()}）`);return;}
  const res=await api('/api/export',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:selected,format})});if(!res.ok){const data=await res.json();throw Error(data.error);}
  const blob=await res.blob();const extension=blob.type.includes('zip')?'zip':format;const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`${exportLabel}-${filtered?'筛选结果':'全部记录'}-${new Date().toLocaleDateString('sv-SE')}.${extension}`;a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);toast(`已导出 ${selected.length} 条记录${extension==='zip'?'，多页 PNG 已打包为 ZIP':''}`);
  }catch(e){showError('导出失败：'+e.message);}finally{$('exportAll').disabled=false;$('exportFiltered').disabled=false;}}
@@ -169,7 +178,8 @@ $('exportAll').onclick=()=>exportRows(false);$('exportFiltered').onclick=()=>exp
 async function exportAllTables(){
  const format=$('exportFormat').value;
  $('exportAllTables').disabled=true;toast('正在生成全部表格…');
- try{if(STATIC_MODE){const sections=Object.entries(tables).map(([key,title])=>({title,fields:tableFields(key),rows:(key===currentTable?rows:readLocalRows(key)||[]).filter(r=>r.some(Boolean))}));const extension=exportDocument('重要信息-全部表格',sections,format);toast(format==='pdf'?'已打开打印窗口，请选择“存储为 PDF”':`已导出全部表格（${extension.toUpperCase()}）`);return;}
+ try{if(format==='json'&&STATIC_MODE){downloadJson(portableAllBackup(),'重要信息-全部表格');toast('已导出全部表格（JSON）');return;}
+ if(STATIC_MODE){const sections=Object.entries(tables).map(([key,title])=>({title,fields:tableFields(key),rows:tableRowsForExport(key)}));const extension=exportDocument('重要信息-全部表格',sections,format);toast(format==='pdf'?'已打开打印窗口，请选择“存储为 PDF”':`已导出全部表格（${extension.toUpperCase()}）`);return;}
   const res=await api('/api/export-all',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({format})});
   if(!res.ok){const data=await res.json();throw Error(data.error);}
   const blob=await res.blob(),extension=blob.type.includes('zip')?'zip':format;
@@ -190,6 +200,24 @@ function downloadBackup(){
  const blob=new Blob([JSON.stringify(portableBackup(rows),null,2)],{type:'application/json'});
  const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=tables[currentTable]+'表备份-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);
  toast('已下载当前内容，包括尚未保存的修改');
+}
+function normalizeAllBackup(data){
+ if(!data||data.format!=='information-ledger-all-v1'||!data.tables||typeof data.tables!=='object')throw Error('全部表格 JSON 格式不正确');
+ return Object.entries(tables).map(([key,title])=>{
+  const item=data.tables[key],rows=Array.isArray(item)?item:item?.rows;
+  if(!Array.isArray(rows))throw Error(`缺少${title}表数据`);
+  const expected=tableFields(key);if(item?.fields&&JSON.stringify(item.fields)!==JSON.stringify(expected))throw Error(`${title}表列名不一致`);
+  if(!validRows(rows,key))throw Error(`${title}表记录内容格式不正确`);
+  return {key,title,fields:[...expected],rows};
+ });
+}
+function previewAllBackup(items,source,title){
+ restoreSource=source;$('backupPreview').hidden=false;$('previewTitle').textContent=title;
+ const count=items.reduce((sum,item)=>sum+item.rows.filter(r=>r.some(Boolean)).length,0);
+ $('previewCount').textContent=`共 ${items.length} 张表、${count} 条记录，下面列出各表摘要。`;
+ const table=$('previewTable');table.replaceChildren();const head=table.createTHead().insertRow();['表格','记录数','字段'].forEach(f=>{const th=document.createElement('th');th.textContent=f;head.append(th);});
+ const body=table.createTBody();items.forEach(item=>{const tr=body.insertRow();[item.title,String(item.rows.filter(r=>r.some(Boolean)).length),item.fields.join('、')].forEach(v=>{const td=tr.insertCell();td.textContent=v;});});
+ $('restoreBackup').disabled=!backupToken;
 }
 function previewBackup(data,source,title){
  if(!data||!Array.isArray(data.rows)||data.rows.length>20000||data.rows.some(r=>!Array.isArray(r)||r.length!==fields.length||r.some(v=>typeof v!=='string'||v.length>32767)))throw Error('备份内容格式不正确');
@@ -237,6 +265,12 @@ $('backupFile').onchange=async()=>{
   if(Array.isArray(data))data={rows:data};
   if(!data||typeof data!=='object')throw Error('请选择包含 rows 数组的记录文件或二维数组');
   if(currentTable!==tableAtStart)return;
+  if(data.format==='information-ledger-all-v1'){
+   if(!STATIC_MODE)throw Error('本机运行模式请逐张表导入；网页版本支持一次导入全部表格');
+   const allTables=normalizeAllBackup(data);await loadBackups();
+   previewAllBackup(allTables,{format:'information-ledger-all-v1',tables:allTables},'JSON 导入预览：全部表格');
+   $('backupStatus').textContent='已读取全部表格。确认恢复将替换六张表，并自动备份当前内容。';return;
+  }
   if(data.format&&data.format!=='information-ledger-v1')throw Error('不支持此 JSON 文件格式');
   const fileTable=Object.hasOwn(tables,data.table)?data.table:null;
   if(data.table&&!fileTable)throw Error('文件中的表名无法识别');
@@ -261,7 +295,12 @@ $('restoreBackup').onclick=async()=>{
  if(saving){$('backupStatus').textContent='正在保存，请保存完成后重新打开此窗口再恢复。';return;}
  if(dirty){$('backupStatus').textContent='当前有未保存的修改。请先下载当前内容备份，并完成保存后再恢复。';return;}
  restoring=true;clearTimeout(timer);$('restoreBackup').disabled=true;$('closeBackups').disabled=true;
- try{if(STATIC_MODE){writeLocalBackup(rows);rows=JSON.parse(JSON.stringify(restoreSource.rows));revision++;writeLocalRows(rows);loaded=true;dirty=false;conflict=false;history=[];selection=null;version++;$('error').hidden=true;$('saveState').textContent='已恢复并保存到本机';$('add').disabled=false;$('paste').disabled=false;reset();$('backupDialog').close();toast('已恢复，恢复前的记录也已备份');return;}
+ try{if(STATIC_MODE){
+  if(restoreSource.format==='information-ledger-all-v1'){
+   restoreSource.tables.forEach(item=>{writeLocalBackupFor(item.key,readLocalRows(item.key)||[]);const next=JSON.parse(JSON.stringify(item.rows));localStorage.setItem(localKey(item.key),JSON.stringify(next));const rev=Number(localStorage.getItem(`${localKey(item.key)}:revision`)||0)+1;localStorage.setItem(`${localKey(item.key)}:revision`,String(rev));});
+   const current=restoreSource.tables.find(item=>item.key===currentTable);rows=JSON.parse(JSON.stringify(current.rows));revision=Number(localStorage.getItem(`${localKey(currentTable)}:revision`)||0);loaded=true;dirty=false;conflict=false;history=[];selection=null;version++;$('error').hidden=true;$('saveState').textContent='已恢复全部表格并保存到本机';$('add').disabled=false;$('paste').disabled=false;reset();$('backupDialog').close();toast('已恢复全部表格，恢复前的记录也已备份');return;
+  }
+  writeLocalBackup(rows);rows=JSON.parse(JSON.stringify(restoreSource.rows));revision++;writeLocalRows(rows);loaded=true;dirty=false;conflict=false;history=[];selection=null;version++;$('error').hidden=true;$('saveState').textContent='已恢复并保存到本机';$('add').disabled=false;$('paste').disabled=false;reset();$('backupDialog').close();toast('已恢复，恢复前的记录也已备份');return;}
  const res=await api('/api/restore',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...restoreSource,token:backupToken})});const data=await res.json();if(!res.ok)throw Error(data.error);
  rows=data.rows;revision=data.revision;loaded=true;dirty=false;conflict=false;history=[];selection=null;version++;$('error').hidden=true;$('saveState').textContent='已恢复并保存到本机';$('add').disabled=false;$('paste').disabled=false;reset();$('backupDialog').close();toast('已恢复，恢复前的记录也已备份');
  }catch(e){$('backupStatus').textContent='恢复未确认成功：'+e.message+' 请重新打开备份与恢复核对。';backupToken=null;}

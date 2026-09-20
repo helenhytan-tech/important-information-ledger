@@ -125,6 +125,9 @@ class Handler(BaseHTTPRequestHandler):
                 fmt=body.get('format','xlsx')
                 if fmt=='xlsx':
                     content=workbook_bundle(tables);mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                elif fmt=='json':
+                    payload={'format':'information-ledger-all-v1','tables':{key:{'title':title,'fields':fields,'rows':rows} for key,title,fields,rows in tables}}
+                    content=json.dumps(payload,ensure_ascii=False,indent=2).encode('utf-8');mime='application/json; charset=utf-8'
                 elif fmt=='html':
                     sections=[]
                     for _,title,fields,rows in tables:
