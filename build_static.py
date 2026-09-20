@@ -15,6 +15,13 @@ for path in DIST.iterdir():
         shutil.rmtree(path)
 for name in FILES:
     shutil.copy2(ROOT / name, DIST / name)
+(DIST / "index.html").write_text(
+    (DIST / "index.html").read_text(encoding="utf-8")
+    .replace('href="/styles.css"', 'href="styles.css"')
+    .replace('src="/core.js"', 'src="core.js"')
+    .replace('src="/app.js"', 'src="app.js"'),
+    encoding="utf-8",
+)
 (DIST / ".nojekyll").write_text("", encoding="utf-8")
 print(f"已生成静态部署目录：{DIST}")
 print("只包含网页文件，不包含 data/、server.py 或本机记录。")
