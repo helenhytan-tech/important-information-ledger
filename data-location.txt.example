@@ -1,0 +1,4 @@
+# 把本文件复制为 data-location.txt，并改成云盘中用于存放 JSON 的文件夹路径。
+# iCloud 示例：/Users/你的用户名/Library/Mobile Documents/com~apple~CloudDocs/重要信息记录系统数据
+# OneDrive 示例：/Users/你的用户名/Library/CloudStorage/OneDrive-个人/重要信息记录系统数据
+# 路径中可以有空格；也可以使用以 ~ 开头的路径。
