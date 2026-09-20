@@ -212,15 +212,27 @@ async function loadBackups(){
 $('backupsButton').onclick=async()=>{$('backupDialog').showModal();await loadBackups();};
 $('closeBackups').onclick=()=>{if(!restoring)$('backupDialog').close();};
 $('downloadBackup').onclick=downloadBackup;
-function chooseJson(){$('backupFile').value='';$('backupFile').click();}
+function chooseJson(){
+ const input=$('backupFile');
+ if(!$('backupDialog').open)$('backupDialog').showModal();
+ $('backupStatus').textContent='请选择要导入的 JSON 文件…';
+ input.value='';
+ try{
+  if(typeof input.showPicker==='function')input.showPicker();
+  else input.click();
+ }catch(e){
+  // Some browsers reject showPicker for a hidden input; the normal click is a safe fallback.
+  try{input.click();}catch(err){$('backupStatus').textContent='无法打开文件选择器，请点击“备份与恢复”窗口中的文件选择控件。';toast('无法打开文件选择器');}
+ }
+}
 $('importBackup').onclick=chooseJson;
 $('importJsonButton').onclick=chooseJson;
 $('backupFile').onchange=async()=>{
  const file=$('backupFile').files[0];if(!file)return;
  const tableAtStart=currentTable;
  if(!$('backupDialog').open)$('backupDialog').showModal();
- await loadBackups();
  try{
+  await loadBackups();
   if(file.size>20000000)throw Error('JSON 文件过大');
   let data=JSON.parse((await file.text()).replace(/^\uFEFF/,''));
   if(currentTable!==tableAtStart)return;
@@ -232,7 +244,7 @@ $('backupFile').onchange=async()=>{
   const source={format:'information-ledger-v1',table:currentTable,fields,rows:data.rows};
   previewBackup(source,source,'JSON 导入预览：'+file.name);
   $('backupStatus').textContent='请核对列顺序和内容。确认恢复将替换当前表，并自动备份原内容。';
- }catch(e){restoreSource=null;$('backupPreview').hidden=true;$('backupStatus').textContent=e.message;}
+ }catch(e){restoreSource=null;$('backupPreview').hidden=true;$('backupStatus').textContent='JSON 导入失败：'+e.message;toast('JSON 导入失败：'+e.message);}
 };
 $('restoreBackup').onclick=async()=>{
  if(!restoreSource||!backupToken||restoring)return;
