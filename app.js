@@ -236,11 +236,11 @@ $('backupFile').onchange=async()=>{
   let data=JSON.parse((await file.text()).replace(/^\uFEFF/,''));
   if(Array.isArray(data))data={rows:data};
   if(!data||typeof data!=='object')throw Error('请选择包含 rows 数组的记录文件或二维数组');
+  if(currentTable!==tableAtStart)return;
   if(data.format&&data.format!=='information-ledger-v1')throw Error('不支持此 JSON 文件格式');
   const fileTable=Object.hasOwn(tables,data.table)?data.table:null;
   if(data.table&&!fileTable)throw Error('文件中的表名无法识别');
   if(fileTable&&fileTable!==currentTable){
-   if(currentTable!==tableAtStart)return;
    if(dirty||saving)throw Error('当前表有未保存的修改，请先保存后再导入');
    // Backups carry their table name. Switch to that table before previewing,
    // so importing a backup from another page does not look like a failure.
@@ -249,7 +249,6 @@ $('backupFile').onchange=async()=>{
    await navigate();
    if(!$('backupDialog').open)$('backupDialog').showModal();
   }
-  if(currentTable!==tableAtStart&&fileTable===tableAtStart)return;
   await loadBackups();
   if(data.fields&&JSON.stringify(data.fields)!==JSON.stringify(fields))throw Error('文件列名与当前表不一致，请切换到对应表');
   const source={format:'information-ledger-v1',table:currentTable,fields,rows:data.rows};
