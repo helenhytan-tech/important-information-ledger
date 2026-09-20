@@ -1,0 +1,8 @@
+data/
+data-location.txt
+__pycache__/
+*.log
+*.zip
+.DS_Store
+dist/
+重要信息记录系统-Mac/
